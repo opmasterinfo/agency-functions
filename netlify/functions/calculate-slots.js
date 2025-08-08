@@ -48,7 +48,8 @@ exports.handler = async (event, context) => {
 
     let rawBusySlots = [];
     
-    // Check if the event body exists and is not an empty string before parsing.
+    // CONDITION: The body is empty or invalid.
+    // This check prevents errors if no data is sent from Make.com.
     if (event.body) {
       // The incoming data from Make.com is a JSON string.
       // We now assume the body is the calendar body object directly, not an array.
@@ -56,23 +57,35 @@ exports.handler = async (event, context) => {
 
       // Get the busy array, which is nested inside the 'calendars' object.
       // We assume the email address key is 'haseebinfo607@gmail.com' based on your example.
+      // CONDITION: The 'busy' array exists but is empty.
+      // If the 'busy' array is not found, an empty array is used as a fallback.
       rawBusySlots = body.calendars['haseebinfo607@gmail.com'].busy || [];
     }
     
-    // We need to convert the busy slots from ISO time format to our friendly string format.
-    const busySlots = rawBusySlots.map(slot => {
-      const startTime = new Date(slot.start);
-      const endTime = new Date(slot.end);
-      return `${formatTime(startTime)} to ${formatTime(endTime)}`;
+    // CONDITION: Handling busy slots of any length (e.g., 10 minutes, 1 hour, etc.).
+    // We convert each busy slot into one or more 30-minute intervals
+    // that match the format of our 'allSlots' array.
+    const busySlots = [];
+    rawBusySlots.forEach(slot => {
+      let current = new Date(slot.start);
+      const end = new Date(slot.end);
+
+      // Loop in 30-minute increments from the start time until we reach the end time.
+      while (current.getTime() < end.getTime()) {
+        const next = new Date(current.getTime() + 30 * 60000); // Add 30 minutes in milliseconds
+        // Format the 30-minute interval and add it to our busySlots array.
+        busySlots.push(`${formatTime(current)} to ${formatTime(next)}`);
+        current = next;
+      }
     });
 
     let availableSlots = [];
 
-    // Case 1: The busy array is empty.
+    // CONDITION: The busy array is empty (no appointments).
     if (busySlots.length === 0) {
       availableSlots = allSlots;
     } else {
-      // Case 2: There are busy slots.
+      // CONDITION: There are one or more busy slots.
       // We filter the 'allSlots' array to find the ones that are NOT in the 'busySlots' array.
       // We use a Set for faster lookups.
       const busySet = new Set(busySlots);
@@ -83,11 +96,14 @@ exports.handler = async (event, context) => {
     let resultMessage = "These are the available time slots ";
 
     // Handle different numbers of available slots for correct grammar.
+    // CONDITION: No available slots.
     if (availableSlots.length === 0) {
       resultMessage = "There are no available time slots.";
     } else if (availableSlots.length === 1) {
+      // CONDITION: Exactly one available slot.
       resultMessage += availableSlots[0];
     } else {
+      // CONDITION: More than one available slot.
       // For more than one slot, join with commas, and use ' and ' for the last one.
       const lastSlot = availableSlots.pop();
       resultMessage += availableSlots.join(', ') + ' and ' + lastSlot;
