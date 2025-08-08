@@ -46,14 +46,19 @@ exports.handler = async (event, context) => {
       '5:30pm to 6pm'
     ];
 
-    // The incoming data from Make.com is a JSON string.
-    // It is also wrapped in an array, so we need to access the first element.
-    const incomingData = JSON.parse(event.body)[0];
-    const body = incomingData.body;
+    let rawBusySlots = [];
+    
+    // Check if the event body exists and is not an empty string before parsing.
+    if (event.body) {
+      // The incoming data from Make.com is a JSON string.
+      // It is also wrapped in an array, so we need to access the first element.
+      const incomingData = JSON.parse(event.body)[0];
+      const body = incomingData.body;
 
-    // Get the busy array, which is nested inside the 'calendars' object.
-    // We assume the email address key is 'haseebinfo607@gmail.com' based on your example.
-    const rawBusySlots = body.calendars['haseebinfo607@gmail.com'].busy || [];
+      // Get the busy array, which is nested inside the 'calendars' object.
+      // We assume the email address key is 'haseebinfo607@gmail.com' based on your example.
+      rawBusySlots = body.calendars['haseebinfo607@gmail.com'].busy || [];
+    }
     
     // We need to convert the busy slots from ISO time format to our friendly string format.
     const busySlots = rawBusySlots.map(slot => {
