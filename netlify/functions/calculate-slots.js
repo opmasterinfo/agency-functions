@@ -51,9 +51,8 @@ exports.handler = async (event, context) => {
     // Check if the event body exists and is not an empty string before parsing.
     if (event.body) {
       // The incoming data from Make.com is a JSON string.
-      // It is also wrapped in an array, so we need to access the first element.
-      const incomingData = JSON.parse(event.body)[0];
-      const body = incomingData.body;
+      // We now assume the body is the calendar body object directly, not an array.
+      const body = JSON.parse(event.body);
 
       // Get the busy array, which is nested inside the 'calendars' object.
       // We assume the email address key is 'haseebinfo607@gmail.com' based on your example.
