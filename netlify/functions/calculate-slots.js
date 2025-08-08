@@ -2,20 +2,36 @@
 // It is designed to be triggered by an HTTP request,
 // likely from a service like Make.com.
 
-// Helper function to format a Date object into a string like "9am" or "1:30pm".
-// This is used for the final output string.
-const formatTime = (date) => {
-  let hours = date.getHours();
-  let minutes = date.getMinutes();
+// Helper function to convert a Date object's hours and minutes into a single number
+// representing minutes from midnight in the specified timezone.
+const timeToMinutesInTimezone = (date, offsetHours) => {
+  // Get the UTC time
+  const utcHours = date.getUTCHours();
+  const utcMinutes = date.getUTCMinutes();
+  
+  // Apply the timezone offset to get local time in minutes
+  let totalMinutes = (utcHours + offsetHours) * 60 + utcMinutes;
+  
+  // Handle cases where the offset pushes the time into the previous or next day
+  if (totalMinutes < 0) {
+    totalMinutes += 24 * 60;
+  }
+  if (totalMinutes >= 24 * 60) {
+    totalMinutes -= 24 * 60;
+  }
+  
+  return totalMinutes;
+};
+
+// Helper function to convert minutes from midnight back into a formatted time string.
+const minutesToTime = (minutes) => {
+  let hours = Math.floor(minutes / 60);
+  let mins = minutes % 60;
   const ampm = hours >= 12 ? 'pm' : 'am';
   hours = hours % 12;
   hours = hours ? hours : 12; // The hour '0' should be '12'
 
-  if (minutes === 0) {
-    return `${hours}${ampm}`;
-  } else {
-    return `${hours}:${minutes < 10 ? '0' + minutes : minutes}${ampm}`;
-  }
+  return `${hours}${mins === 0 ? '' : ':' + (mins < 10 ? '0' + mins : mins)}${ampm}`;
 };
 
 // The handler function is the main entry point for the function.
@@ -23,15 +39,19 @@ const formatTime = (date) => {
 exports.handler = async (event, context) => {
   // Use a try-catch block for robust error handling.
   try {
-    // Define the full list of all possible 30-minute time slots as Date objects.
-    // We use a consistent reference date and then add time to it.
-    const referenceDate = new Date('2025-01-01T09:00:00-05:00'); // Use a fixed reference date to avoid issues
-    const allSlots = [];
-    for (let i = 0; i < 18; i++) { // 18 slots from 9am to 6pm
-      const slotStart = new Date(referenceDate.getTime() + i * 30 * 60000);
-      allSlots.push(slotStart);
-    }
+    // Define the timezone offset from the calendar data.
+    const timezoneOffset = -4; // -04:00 from the calendar output
+    
+    // Define the full list of all possible 30-minute time slots as minutes from midnight
+    // in the -04:00 timezone.
+    const allSlotsInMinutes = [];
+    const startTimeInMinutes = 9 * 60; // 9:00 AM in minutes
+    const endTimeInMinutes = 18 * 60; // 6:00 PM in minutes
 
+    for (let time = startTimeInMinutes; time < endTimeInMinutes; time += 30) {
+      allSlotsInMinutes.push(time);
+    }
+    
     let rawBusySlots = [];
     
     // Check if the event body exists and is not an empty string before parsing.
@@ -43,37 +63,35 @@ exports.handler = async (event, context) => {
     // This is for debugging purposes. It will log the raw busy slots received.
     console.log('Raw Busy Slots:', JSON.stringify(rawBusySlots));
     
-    const busySlotTimes = new Set();
+    const busySlotsInMinutes = new Set();
     rawBusySlots.forEach(slot => {
       const busyStart = new Date(slot.start);
       const busyEnd = new Date(slot.end);
 
+      const busyStartMinutes = timeToMinutesInTimezone(busyStart, timezoneOffset);
+      const busyEndMinutes = timeToMinutesInTimezone(busyEnd, timezoneOffset);
+
       // Loop through all 30-minute intervals that the busy slot covers.
-      let current = busyStart;
-      while (current.getTime() < busyEnd.getTime()) {
-        const matchingSlot = allSlots.find(
-          (s) => s.getHours() === current.getHours() && s.getMinutes() === current.getMinutes()
-        );
-        if (matchingSlot) {
-          busySlotTimes.add(matchingSlot.getTime());
-        }
-        current = new Date(current.getTime() + 30 * 60000);
+      for (let time = busyStartMinutes; time < busyEndMinutes; time += 30) {
+        busySlotsInMinutes.add(time);
       }
     });
 
-    let availableSlots = allSlots.filter(slot => !busySlotTimes.has(slot.getTime()));
+    let availableSlotsInMinutes = allSlotsInMinutes.filter(
+      (slot) => !busySlotsInMinutes.has(slot)
+    );
     
     // Now, we need to format the final output string as requested.
     let resultMessage = "These are the available time slots ";
 
     // Handle different numbers of available slots for correct grammar.
-    if (availableSlots.length === 0) {
+    if (availableSlotsInMinutes.length === 0) {
       resultMessage = "There are no available time slots.";
     } else {
-      const formattedAvailableSlots = availableSlots.map((slot) => {
-        const startTime = slot;
-        const endTime = new Date(slot.getTime() + 30 * 60000);
-        return `${formatTime(startTime)} to ${formatTime(endTime)}`;
+      const formattedAvailableSlots = availableSlotsInMinutes.map((slotTime) => {
+        const startTime = minutesToTime(slotTime);
+        const endTime = minutesToTime(slotTime + 30);
+        return `${startTime} to ${endTime}`;
       });
       
       const lastSlot = formattedAvailableSlots.pop();
